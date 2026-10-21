@@ -9,10 +9,11 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-# Voice per language: Chinese = lively young girl, English = Jenny "excited" (same praise voice as Moon English).
+# Voice per language: Chinese = lively young girl, English = Jenny "cheerful" at natural pitch.
+# (Jenny "excited" with a raised pitch made short words mushy: speech recognition heard "Ready? Go!" as "Ready. Dull".)
 $Voices = @{
   zh = @{ Voice = 'zh-CN-XiaoyiNeural'; Locale = 'zh-CN'; Style = 'cheerful'; Rate = '+6%'; Pitch = '+8%' }
-  en = @{ Voice = 'en-US-JennyNeural';  Locale = 'en-US'; Style = 'excited';  Rate = '+4%'; Pitch = '+6%' }
+  en = @{ Voice = 'en-US-JennyNeural';  Locale = 'en-US'; Style = 'cheerful'; Rate = '0%';  Pitch = '0%' }
 }
 
 $root = Split-Path -Parent $PSScriptRoot

@@ -38,6 +38,7 @@
   .rbtn:active { transform: translateY(4px); box-shadow: 0 1px 0 rgba(220, 120, 170, .4); }
   .rbtn.off { opacity: .45; filter: grayscale(1); }
   .rbtn svg { width: 25px; height: 25px; fill: none; stroke: #c4508a; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .rbtn.lang { font-size: 19px; color: #c4508a; letter-spacing: .02em; }
   .rbtn.sm { width: 42px; height: 42px; }
   .rbtn.sm svg { width: 21px; height: 21px; }
 
@@ -158,6 +159,7 @@
     <button class="rbtn" data-tog="music" aria-label="背景音乐" title="背景音乐">🎵</button>
     <button class="rbtn" data-tog="sfx" aria-label="音效" title="音效">🔔</button>
     <button class="rbtn" data-tog="voice" aria-label="鼓励语音" title="鼓励语音">💬</button>
+    <button class="rbtn lang" data-lang aria-label="语音语言" title="语音语言：中文 / English">中</button>
   </div>
   <div class="tcol">
     <div class="logo" aria-label="萌萌消消乐">
@@ -208,35 +210,53 @@
 
 <script>
 'use strict';
-const VERSION = 'v1.0';
+const VERSION = 'v1.1';
 const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = n => Math.floor(Math.random() * n);
 const R = 8, C = 8, LEVELS = 30;
 
 const SAVE_KEY = 'cutie-pop-v1';
-const save = { stars: {}, best: 0, music: true, sfx: true, voice: true, seenHelp: false };
+const save = { stars: {}, best: 0, music: true, sfx: true, voice: true, lang: 'zh', seenHelp: false };
 try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
-// 鼓励语音台词。tools/make-voice.ps1 读这张表生成 voice/<分组>-<序号>.mp3，改了台词要重新生成。
+// 鼓励语音台词，中文和英文两套。tools/make-voice.ps1 读这张表生成 voice/<语言>/<分组>-<序号>.mp3，改了台词要重新生成。
 // VOICE-BEGIN
 const VOICE = {
-  "start": ["开始啦！", "准备好了吗？出发！"],
-  "t1": ["好棒！", "不错哦！"],
-  "t2": ["真厉害！", "太棒啦！"],
-  "t3": ["超级棒！", "哇，好厉害！"],
-  "t4": ["无敌啦！", "停不下来啦！"],
-  "t5": ["萌力全开！", "不可思议！", "你是消除之王！"],
-  "rainbow": ["彩虹星来啦！"],
-  "shuffle": ["洗洗牌，再来！"],
-  "hurry": ["时间快到啦！"],
-  "win": ["过关啦！", "成功啦，你真棒！"],
-  "lose": ["差一点点，再试一次吧！"],
-  "timeup": ["时间到！"],
-  "best": ["新纪录！太厉害啦！"]
+  "zh": {
+    "start": ["开始啦！", "准备好了吗？出发！"],
+    "t1": ["好棒！", "不错哦！"],
+    "t2": ["真厉害！", "太棒啦！"],
+    "t3": ["超级棒！", "哇，好厉害！"],
+    "t4": ["无敌啦！", "停不下来啦！"],
+    "t5": ["萌力全开！", "不可思议！", "你是消除之王！"],
+    "rainbow": ["彩虹星来啦！"],
+    "shuffle": ["洗洗牌，再来！"],
+    "hurry": ["时间快到啦！"],
+    "win": ["过关啦！", "成功啦，你真棒！"],
+    "lose": ["差一点点，再试一次吧！"],
+    "timeup": ["时间到！"],
+    "best": ["新纪录！太厉害啦！"]
+  },
+  "en": {
+    "start": ["Let's go!", "Ready? Go!"],
+    "t1": ["Good!", "Nice!"],
+    "t2": ["Great!", "Awesome!"],
+    "t3": ["Super!", "Wow, amazing!"],
+    "t4": ["Fantastic!", "Unstoppable!"],
+    "t5": ["Cutie Power!", "Incredible!", "You're a superstar!"],
+    "rainbow": ["Rainbow star!"],
+    "shuffle": ["Shuffle time!"],
+    "hurry": ["Hurry up!"],
+    "win": ["Level clear!", "You did it!"],
+    "lose": ["So close! Try again!"],
+    "timeup": ["Time's up!"],
+    "best": ["New record! Amazing!"]
+  }
 };
 // VOICE-END
+const LANG_LABEL = { zh: '中', en: 'EN' };
 
 // 萌力等级：短时间内消得越多萌力越高，音乐一层层加乐器、加速，满了进入“萌力爆发”（分数翻倍、升调）
 const TIER_UP = [0, 12, 30, 50, 70, 88];
@@ -587,31 +607,34 @@ const Snd = (() => {
 
 // 鼓励语音：优先播放 voice/ 里预先合成的录音，读不到时用 <audio>，再不行用系统朗读
 const Voice = (() => {
-  const bufs = {}; let ac = null;
-  function load(a) {
-    ac = a;
-    for (const g in VOICE) VOICE[g].forEach((_, i) => {
-      const id = g + '-' + i;
-      fetch('voice/' + id + '.mp3').then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
+  const bufs = {}, loaded = {}; let ac = null;
+  // 只下载当前语言那一套，切换语言时再下载另一套
+  function loadLang(lang) {
+    if (!ac || loaded[lang]) return;
+    loaded[lang] = true;
+    for (const g in VOICE[lang]) VOICE[lang][g].forEach((_, i) => {
+      const id = `${lang}/${g}-${i}`;
+      fetch(`voice/${id}.mp3`).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
         .then(b => new Promise((res, rej) => ac.decodeAudioData(b, res, rej))).then(buf => { bufs[id] = buf; }).catch(() => {});
     });
   }
+  function load(a) { ac = a; loadLang(save.lang); }
   function speak(text) {
     if (!window.speechSynthesis) return;
-    const u = new SpeechSynthesisUtterance(text); u.lang = 'zh-CN'; u.rate = 1.15; u.pitch = 1.6;
+    const u = new SpeechSynthesisUtterance(text); u.lang = save.lang === 'en' ? 'en-US' : 'zh-CN'; u.rate = 1.1; u.pitch = 1.5;
     speechSynthesis.cancel(); speechSynthesis.speak(u);
   }
   function play(g, i) {
     if (!save.voice) return;
-    const id = g + '-' + i;
+    const id = `${save.lang}/${g}-${i}`;
     if (ac && bufs[id] && ac.state === 'running') {
       const s = ac.createBufferSource(); s.buffer = bufs[id]; s.connect(Snd.vBus); s.start();
       Snd.duck(bufs[id].duration + .1); return;
     }
-    const au = new Audio('voice/' + id + '.mp3');
-    au.play().catch(() => speak(VOICE[g][i]));
+    const au = new Audio(`voice/${id}.mp3`);
+    au.play().catch(() => speak(VOICE[save.lang][g][i]));
   }
-  return { load, play };
+  return { load, loadLang, play };
 })();
 
 // ===== 关卡 =====
@@ -989,7 +1012,7 @@ function updateTier() {
 }
 let shoutUntil = 0, shoutPri = 0;
 function encourage(g, pri = 1) {
-  const list = VOICE[g]; if (!list) return;
+  const list = VOICE[save.lang][g]; if (!list) return;
   if (G && G.over && pri < 10) return;
   const now = performance.now();
   if (now < shoutUntil && pri <= shoutPri) return;
@@ -1000,8 +1023,11 @@ function encourage(g, pri = 1) {
 }
 function shout(text, pri) {
   const el = $('shout'), lvl = Math.min(5, Math.floor(pri));
-  el.className = ''; void el.offsetWidth;
-  el.innerHTML = [...text].map((ch, i) => `<span style="animation-delay:${i * 45}ms;--h:${(i * 40 + lvl * 50 + 320) % 360}">${ch}</span>`).join('');
+  el.className = 'l' + lvl; el.style.fontSize = ''; void el.offsetWidth;
+  const step = /[a-z]/i.test(text) ? 30 : 45; // 英文字母多，蹦得快一点
+  el.innerHTML = [...text].map((ch, i) => `<span style="animation-delay:${i * step}ms;--h:${(i * 40 + lvl * 50 + 320) % 360}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('');
+  const max = W * .94; // 英文句子长，太宽就缩小字号
+  if (el.offsetWidth > max) el.style.fontSize = parseFloat(getComputedStyle(el).fontSize) * max / el.offsetWidth + 'px';
   el.className = 'go l' + lvl;
 }
 
@@ -1165,9 +1191,12 @@ function showHelp(next) {
   </div>`, [{ label: '知道啦', cls: 'pink', fn: () => { save.seenHelp = true; persist(); if (next) next(); } }]);
 }
 function togRow() {
-  return `<div class="togrow"><label><button class="rbtn" data-tog="music">🎵</button>音乐</label><label><button class="rbtn" data-tog="sfx">🔔</button>音效</label><label><button class="rbtn" data-tog="voice">💬</button>语音</label></div>`;
+  return `<div class="togrow"><label><button class="rbtn" data-tog="music">🎵</button>音乐</label><label><button class="rbtn" data-tog="sfx">🔔</button>音效</label><label><button class="rbtn" data-tog="voice">💬</button>语音</label><label><button class="rbtn lang" data-lang></button>中 / EN</label></div>`;
 }
-function refreshToggles() { document.querySelectorAll('[data-tog]').forEach(b => b.classList.toggle('off', !save[b.dataset.tog])); }
+function refreshToggles() {
+  document.querySelectorAll('[data-tog]').forEach(b => b.classList.toggle('off', !save[b.dataset.tog]));
+  document.querySelectorAll('[data-lang]').forEach(b => { b.textContent = LANG_LABEL[save.lang]; b.classList.toggle('off', !save.voice); });
+}
 function renderLevels() {
   let top = 1; while (top < LEVELS && save.stars[top]) top++;
   let total = 0;
@@ -1433,6 +1462,13 @@ cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') pointe
 document.addEventListener('pointerdown', () => Snd.unlock(), true);
 document.addEventListener('keydown', e => { Snd.unlock(); if (e.key === 'Escape') pause(); });
 document.addEventListener('click', e => {
+  if (e.target.closest('[data-lang]')) { // 中文 ⇄ English，切换后马上说一句听听
+    save.lang = save.lang === 'zh' ? 'en' : 'zh'; save.voice = true; persist(); refreshToggles();
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    Voice.loadLang(save.lang);
+    setTimeout(() => Voice.play('t1', 0), 250);
+    return;
+  }
   const b = e.target.closest('[data-tog]'); if (!b) return;
   const k = b.dataset.tog; save[k] = !save[k]; persist(); refreshToggles();
   if (k === 'music') Snd.setMusic(save.music);

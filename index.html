@@ -59,6 +59,13 @@
   .ver { position: fixed; bottom: calc(8px + var(--sb)); right: 12px; font-size: 12px; color: rgba(90, 45, 85, .5); font-family: system-ui, sans-serif; }
   @media (max-height: 600px) { .tcol { padding-top: calc(12px + var(--st)); } .menu { gap: 12px; } .btn { padding: 9px 28px; font-size: 22px; } .btn.small { font-size: 18px; padding: 7px 22px; } }
 
+  /* 世界切换 */
+  .wtabs { display: flex; gap: 4px; padding: 5px; border-radius: 99px; background: rgba(255, 255, 255, .55); box-shadow: inset 0 2px 4px rgba(150, 50, 100, .12); width: max-content; }
+  .wtabs button { padding: 7px 16px; border-radius: 99px; font-size: 18px; color: #b0507e; white-space: nowrap; transition: background .2s, transform .1s; }
+  .wtabs button:active { transform: scale(.95); }
+  .wtabs button.on { background: #fff; color: #ff5d9e; box-shadow: 0 3px 0 #f5b3cf; }
+  #levels .wtabs { margin: 0 auto 16px; }
+
   /* 选关 */
   .lvwrap { position: absolute; inset: 0; overflow-y: auto; padding: calc(14px + var(--st)) 16px calc(30px + var(--sb)); }
   .lvhead { display: flex; align-items: center; justify-content: space-between; max-width: 640px; margin: 0 auto 18px; }
@@ -181,6 +188,7 @@
     </div>
     <div id="parade"></div>
     <div class="menu ui">
+      <div class="wtabs"><button data-world="pets">🐰 萌宠乐园</button><button data-world="fruit">🍓 水果乐园</button></div>
       <button class="btn pink" id="bLevels">闯关模式</button>
       <button class="btn" id="bTimed">60 秒挑战</button>
       <div class="best" id="bestLbl"></div>
@@ -197,6 +205,7 @@
       <h2>选择关卡</h2>
       <div class="stot" id="starTotal">★ 0</div>
     </div>
+    <div class="wtabs"><button data-world="pets">🐰 萌宠乐园</button><button data-world="fruit">🍓 水果乐园</button></div>
     <div id="lvgrid"></div>
   </div>
 </section>
@@ -224,15 +233,16 @@
 
 <script>
 'use strict';
-const VERSION = 'v1.2';
+const VERSION = 'v1.3';
 const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = n => Math.floor(Math.random() * n);
 const R = 8, C = 8, LEVELS = 30;
 
 const SAVE_KEY = 'cutie-pop-v1';
-const save = { stars: {}, best: 0, music: true, sfx: true, voice: true, lang: 'zh', seenHelp: false };
+const save = { stars: {}, bests: {}, world: 'pets', music: true, sfx: true, voice: true, lang: 'zh', seenHelp: false };
 try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
+if (save.best) { save.bests.pets = Math.max(save.bests.pets || 0, save.best); delete save.best; } // v1.2 以前只有一个 60 秒纪录，算在萌宠乐园
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
 // 鼓励语音台词，中文和英文两套。tools/make-voice.ps1 读这张表生成 voice/<语言>/<分组>-<序号>.mp3，改了台词要重新生成。
@@ -285,17 +295,48 @@ const TOOLS = [
   { id: 'extra', icon: '⏳', name: '加步数', n: 1 },
 ];
 
-// ===== 小萌物造型 =====
-const KINDS = [
-  { name: '草莓兔', c: '#ff8fb6', d: '#e45d8e', l: '#ffd6e5' },
-  { name: '小黄鸡', c: '#ffd447', d: '#e6a817', l: '#fff4b8' },
-  { name: '小蓝鲸', c: '#6cc5ff', d: '#3a93dc', l: '#d2efff' },
-  { name: '青蛙仔', c: '#84dc6c', d: '#45ad44', l: '#d9f8c9' },
-  { name: '紫猫咪', c: '#b993ff', d: '#8760e0', l: '#ebe0ff' },
-  { name: '橘子熊', c: '#ffa862', d: '#e0782f', l: '#ffe2c6' },
-];
-const EYES = [[14, 8, 6], [15, -2, 6], [15, 6, 6], [17, -14, 6.5], [14, 4, 6], [14, -1, 6], [9, 2, 5]]; // [x, y, 半径]，最后一个是彩虹星
-const BLUSH = [[22, 20], [24, 14], [27, 18], [28, 20], [24, 21], [24, 16]];
+// ===== 两个世界：萌宠乐园、水果乐园（各自的萌物、天空、棋盘颜色、曲子、棋盘造型） =====
+const THEMES = {
+  pets: {
+    id: 'pets', name: '萌宠乐园', short: '萌宠', icon: '🐰', prefix: '',
+    kinds: [
+      { name: '草莓兔', c: '#ff8fb6', d: '#e45d8e', l: '#ffd6e5' },
+      { name: '小黄鸡', c: '#ffd447', d: '#e6a817', l: '#fff4b8' },
+      { name: '小蓝鲸', c: '#6cc5ff', d: '#3a93dc', l: '#d2efff' },
+      { name: '青蛙仔', c: '#84dc6c', d: '#45ad44', l: '#d9f8c9' },
+      { name: '紫猫咪', c: '#b993ff', d: '#8760e0', l: '#ebe0ff' },
+      { name: '橘子熊', c: '#ffa862', d: '#e0782f', l: '#ffe2c6' },
+    ],
+    eyes: [[14, 8, 6], [15, -2, 6], [15, 6, 6], [17, -14, 6.5], [14, 4, 6], [14, -1, 6], [9, 2, 5]], // [x, y, 半径]，最后一个是彩虹星
+    blush: [[22, 20], [24, 14], [27, 18], [28, 20], [24, 21], [24, 16]],
+    sky: [335, 265], tray: ['#ffe7f1', '#fff4f9'], key: 0, mel: 0,
+    shapes: ['corner', 'full', 'heart', 'diamond', 'full', 'cup', 'pyramid'],
+  },
+  fruit: {
+    id: 'fruit', name: '水果乐园', short: '水果', icon: '🍓', prefix: 'f',
+    kinds: [
+      { name: '草莓', c: '#ff6b81', d: '#d93a55', l: '#ffc9d1' },
+      { name: '橙子', c: '#ffa53d', d: '#e27812', l: '#ffdcae' },
+      { name: '柠檬', c: '#ffe352', d: '#d9ae10', l: '#fff8cc' },
+      { name: '西瓜', c: '#86dc6c', d: '#3f9e3a', l: '#d8f8c9' },
+      { name: '葡萄', c: '#b07cf0', d: '#7d4acf', l: '#e8d8ff' },
+      { name: '桃子', c: '#ffa6c0', d: '#e8709a', l: '#fff0dc' },
+    ],
+    eyes: [[14, 4, 6], [14, 6, 6], [14, 6, 6], [14, 6, 6], [11, 6, 5.5], [14, 6, 6], [9, 2, 5]],
+    blush: [[22, 15], [24, 18], [25, 17], [24, 18], [18, 16], [24, 18]],
+    sky: [28, 150], tray: ['#ffefd6', '#fffaf0'], key: 5, mel: 1,
+    shapes: ['cross', 'full', 'diamond', 'tee', 'heart', 'corner', 'pyramid', 'cup'],
+  },
+};
+let TH = THEMES.pets, KINDS = TH.kinds, EYES = TH.eyes, BLUSH = TH.blush;
+function setTheme(id) {
+  if (!THEMES[id]) id = 'pets';
+  if (TH.id === id && SPR.length) return;
+  TH = THEMES[id]; KINDS = TH.kinds; EYES = TH.eyes; BLUSH = TH.blush;
+  sprPx = 0; Snd.setTheme(TH);
+  if (W) layout();
+}
+const starKey = (L, world) => THEMES[world].prefix + L;
 const INK = '#4a2747', TAU = Math.PI * 2;
 
 function mouthW(x, cx, cy, r = 3.4) {
@@ -333,7 +374,8 @@ function drawBody(x, k) {
   const grad = (cx, cy, r) => { const g = x.createRadialGradient(cx - r * .35, cy - r * .45, r * .08, cx, cy, r * 1.05); g.addColorStop(0, K.l); g.addColorStop(.5, K.c); g.addColorStop(1, K.d); return g; };
   const fs = (fill, lw = 3.2) => { x.fillStyle = fill; x.fill(); x.strokeStyle = K.d; x.lineWidth = lw; x.stroke(); };
   let gloss = [-15, -12];
-  switch (k) {
+  if (TH.id === 'fruit') gloss = drawFruit(x, k, K, grad, fs);
+  else switch (k) {
     case 0: // 草莓兔
       for (const s of [-1, 1]) {
         x.save(); x.translate(s * 14, -24); x.rotate(s * .22);
@@ -384,6 +426,69 @@ function drawBody(x, k) {
   x.fillStyle = 'rgba(255, 95, 140, .38)';
   for (const s of [-1, 1]) { x.beginPath(); x.ellipse(s * bx, by, 7, 4.2, 0, 0, TAU); x.fill(); }
   x.fillStyle = 'rgba(255,255,255,.6)'; x.beginPath(); x.ellipse(gloss[0], gloss[1], 8, 4.5, -.6, 0, TAU); x.fill();
+}
+
+// 一簇叶子：从 (cx, cy) 向 angles 各个方向长出去
+function leaves(x, cx, cy, angles, len, w = 5.5) {
+  for (const a of angles) {
+    x.save(); x.translate(cx + Math.cos(a) * len * .5, cy + Math.sin(a) * len * .5); x.rotate(a);
+    x.beginPath(); x.ellipse(0, 0, len * .55, w, 0, 0, TAU);
+    x.fillStyle = '#62d16b'; x.fill(); x.strokeStyle = '#38a046'; x.lineWidth = 2.2; x.stroke(); x.restore();
+  }
+}
+// 水果乐园的萌物，返回高光位置
+function drawFruit(x, k, K, grad, fs) {
+  switch (k) {
+    case 0: // 草莓：上宽下尖，黄色小籽，顶上一圈叶子
+      x.beginPath(); x.moveTo(0, 45); x.bezierCurveTo(-30, 37, -44, 6, -38, -12); x.bezierCurveTo(-32, -30, 32, -30, 38, -12); x.bezierCurveTo(44, 6, 30, 37, 0, 45); x.closePath();
+      fs(grad(0, 4, 40));
+      x.fillStyle = '#ffeaa0';
+      for (const [sx, sy] of [[-31, -6], [31, -6], [-29, 18], [29, 18], [-15, 33], [15, 33], [0, 39]]) { x.beginPath(); x.ellipse(sx, sy, 1.9, 3.1, 0, 0, TAU); x.fill(); }
+      leaves(x, 0, -24, [Math.PI + .2, Math.PI * .78, Math.PI * .22, -.2], 22);
+      x.beginPath(); x.moveTo(0, -24); x.lineTo(2, -36); x.strokeStyle = '#38a046'; x.lineWidth = 4; x.stroke();
+      mouthW(x, 0, 16); return [-20, -8];
+    case 1: // 橙子：圆圆的，表皮小点点，小梗和一片叶子
+      x.fillStyle = '#8a5a2b'; x.fillRect(-2.5, -36, 5, 9);
+      x.beginPath(); x.arc(0, 8, 37, 0, TAU); fs(grad(0, 8, 37));
+      x.fillStyle = 'rgba(255,255,255,.35)';
+      for (const [dx, dy] of [[-24, -10], [24, -12], [-30, 14], [30, 16], [-16, 34], [18, 34], [0, -20]]) { x.beginPath(); x.arc(dx, dy, 1.6, 0, TAU); x.fill(); }
+      leaves(x, 2, -30, [-.45], 24, 6);
+      smile(x, 0, 19, 6); return [-15, -12];
+    case 2: // 柠檬：横着的椭圆，两头小尖
+      for (const s of [-1, 1]) { x.beginPath(); x.ellipse(s * 40, 8, 8, 5.5, 0, 0, TAU); fs(K.c, 2.6); }
+      x.beginPath(); x.ellipse(0, 8, 41, 31, 0, 0, TAU); fs(grad(0, 8, 40));
+      leaves(x, -2, -21, [-2.5], 22, 6);
+      mouthW(x, 0, 18); return [-20, -6];
+    case 3: { // 西瓜：圆滚滚的绿西瓜，两边深色花纹
+      x.beginPath(); x.arc(0, 8, 37, 0, TAU); x.fillStyle = grad(0, 8, 37); x.fill();
+      x.save(); x.clip(); x.strokeStyle = 'rgba(30, 120, 45, .75)'; x.lineWidth = 6.5;
+      for (const sx of [-26, 26, -42, 42]) {
+        x.beginPath();
+        for (let y = -32; y <= 48; y += 7) { const f = Math.sqrt(Math.max(0, 1 - ((y - 8) / 40) ** 2)); x.lineTo(sx * (.4 + .6 * f) + ((y / 7) % 2 ? 3 : -3), y); }
+        x.stroke();
+      }
+      x.restore();
+      x.beginPath(); x.arc(0, 8, 37, 0, TAU); x.strokeStyle = K.d; x.lineWidth = 3.2; x.stroke();
+      x.beginPath(); x.moveTo(0, -29); x.quadraticCurveTo(-3, -39, 6, -39); x.quadraticCurveTo(13, -38, 9, -32); x.strokeStyle = '#38a046'; x.lineWidth = 3; x.stroke();
+      smile(x, 0, 19, 6); return [-15, -12];
+    }
+    case 4: { // 葡萄：一串小葡萄，前面一颗大的当脸
+      x.beginPath(); x.moveTo(0, -30); x.lineTo(3, -43); x.strokeStyle = '#8a5a2b'; x.lineWidth = 4; x.stroke();
+      leaves(x, 3, -38, [-.3], 22, 6);
+      const grape = (gx, gy, r) => { x.beginPath(); x.arc(gx, gy, r, 0, TAU); fs(grad(gx, gy, r), 2.6); x.fillStyle = 'rgba(255,255,255,.55)'; x.beginPath(); x.arc(gx - r * .35, gy - r * .4, r * .22, 0, TAU); x.fill(); };
+      for (const [gx, gy] of [[-24, -16], [0, -22], [24, -16], [-31, 8], [31, 8], [-19, 32], [19, 32], [0, 41]]) grape(gx, gy, 13);
+      x.beginPath(); x.arc(0, 8, 27, 0, TAU); fs(grad(0, 8, 27));
+      smile(x, 0, 18, 5); return [-11, -7];
+    }
+    case 5: // 桃子：圆鼓鼓带一道浅沟，顶上两片叶子
+      x.beginPath(); x.moveTo(0, -22); x.bezierCurveTo(-14, -34, -40, -26, -38, 2); x.bezierCurveTo(-36, 30, -14, 44, 0, 44);
+      x.bezierCurveTo(14, 44, 36, 30, 38, 2); x.bezierCurveTo(40, -26, 14, -34, 0, -22); x.closePath();
+      fs(grad(-6, 6, 40));
+      x.beginPath(); x.moveTo(0, -20); x.quadraticCurveTo(-7, -12, -5, -3); x.strokeStyle = K.d; x.lineWidth = 2.2; x.stroke();
+      leaves(x, 0, -24, [-2.3, -.85], 24, 6.5);
+      mouthW(x, 0, 19); return [-20, -6];
+  }
+  return [-15, -12];
 }
 
 function drawEyes(x, k, lx, ly, blink, happy) {
@@ -457,7 +562,7 @@ function drawTile(x, t, px, py, cell, o = {}) {
 
 const iconCache = {};
 function tileIcon(k, sp = 0, size = 60) {
-  const key = k + '_' + sp;
+  const key = TH.id + k + '_' + sp;
   if (iconCache[key]) return iconCache[key];
   const c = document.createElement('canvas'); c.width = c.height = size * 2;
   const x = c.getContext('2d'); x.scale(2, 2);
@@ -469,12 +574,22 @@ function tileIcon(k, sp = 0, size = 60) {
 const MUSIC_VOL = .5;
 const Snd = (() => {
   let ac = null, out, mBus, sBus, vBus, noiseBuf, timer = 0;
-  let tier = 0, hurry = false, bpm = 100, step = 0, nextT = 0, trans = 0;
+  let tier = 0, hurry = false, bpm = 100, step = 0, nextT = 0, trans = 0, key = 0, mel = 0;
   const beats = [];
   const mf = m => 440 * Math.pow(2, (m - 69) / 12);
-  // C – G – Am – F – C – G – F – G，旋律每小节 8 个八分音符（null 是休止）
+  // C – G – Am – F – C – G – F – G，旋律每小节 8 个八分音符（null 是休止）。每个世界整体移调（key）并用自己的旋律
   const PROG = [[48, 0], [43, 0], [45, 1], [41, 0], [48, 0], [43, 0], [41, 0], [43, 0]];
-  const MEL = [
+  const MEL_FRUIT = [ // 水果乐园：更跳跃的旋律，木琴音色，整体升到 F 大调
+    [60, 64, 67, null, 64, 67, 72, null],
+    [71, null, 67, 62, 59, 62, 67, null],
+    [69, null, 64, 60, 57, 60, 64, 67],
+    [65, 64, 65, 69, 67, null, null, null],
+    [60, 64, 67, 72, 76, null, 72, 67],
+    [71, 67, 62, 67, 74, null, 71, null],
+    [69, 65, 60, 65, 67, 64, 60, 62],
+    [64, null, 62, null, 59, null, 55, null],
+  ];
+  const MEL_PETS = [
     [76, null, 79, 76, 72, null, 74, 76],
     [74, null, 71, 74, 79, null, 77, 76],
     [72, null, 76, 72, 69, null, 72, 76],
@@ -522,20 +637,22 @@ const Snd = (() => {
   }
   const bell = (n, t, v) => { tone('sine', mf(n), t, .55, v, mBus, { a: .004 }); tone('sine', mf(n + 12), t, .22, v * .35, mBus); tone('triangle', mf(n + 19), t, .07, v * .12, mBus); };
   const clap = (t, v) => { noise(t, .12, v, mBus, 'bandpass', 1400, { q: 1.5 }); noise(t + .012, .14, v * .7, mBus, 'bandpass', 1900, { q: 1.2 }); };
+  // 木琴：短促的基音 + 4 倍频的“哒”
+  const marimba = (n, t, v) => { tone('sine', mf(n), t, .32, v * 1.2, mBus, { a: .002 }); tone('sine', mf(n) * 4, t, .05, v * .3, mBus, { a: .001 }); tone('triangle', mf(n - 12), t, .14, v * .35, mBus); };
 
   function play(st, t) {
     const s = st % 16, bar = Math.floor(st / 16) % 8, T = tier, six = 60 / bpm / 4;
     if (s === 0) trans = T >= 5 ? 2 : 0; // 萌力爆发时升两个半音
     if (s % 4 === 0) { beats.push({ t, d: six * 4 }); if (beats.length > 12) beats.shift(); }
     if (!save.music) return;
-    const [root, minor] = PROG[bar], r = root + trans, tri = [0, minor ? 3 : 4, 7], m = mBus;
+    const [root, minor] = PROG[bar], r = root + trans + key, tri = [0, minor ? 3 : 4, 7], m = mBus;
     // 0 级：柔和铺底 + 八音盒旋律
     if (s === 0) tri.forEach(d => tone('triangle', mf(r + 12 + d), t, six * 16, T >= 3 ? .035 : .05, m, { a: .2, lp: 1500 }));
     if (s % 2 === 0) {
-      const n = MEL[bar][s / 2];
+      const n = (mel ? MEL_FRUIT : MEL_PETS)[bar][s / 2];
       if (n) {
-        const nn = n + trans;
-        if (T < 3) bell(nn, t, T === 0 ? .09 : .12);
+        const nn = n + trans + key;
+        if (T < 3) (mel ? marimba : bell)(nn, t, T === 0 ? .09 : .12);
         else { tone('square', mf(nn), t, six * 1.9, .05, m, { lp: 2400, a: .008 }); tone('sine', mf(nn), t, six * 2, .06, m); if (T >= 4) bell(nn + 12, t, .05); }
       }
     }
@@ -618,6 +735,7 @@ const Snd = (() => {
   return {
     unlock, sfx, beat,
     setTier(t) { tier = t; },
+    setTheme(th) { key = th.key; mel = th.mel; },
     setHurry(h) { hurry = h; },
     setMusic(on) { if (ac) ramp(mBus, on ? MUSIC_VOL : 0); },
     setSfx(on) { if (ac) ramp(sBus, on ? .8 : 0, .02); },
@@ -668,15 +786,16 @@ const SHAPES = {
   diamond: ['..####..', '.######.', '########', '########', '########', '########', '.######.', '..####..'],
   cup: ['##....##', '###..###', '########', '########', '########', '########', '########', '.######.'],
   pyramid: ['...##...', '..####..', '.######.', '########', '########', '########', '########', '########'],
+  cross: ['..####..', '..####..', '########', '########', '########', '########', '..####..', '..####..'],
+  tee: ['########', '########', '########', '.######.', '..####..', '..####..', '..####..', '..####..'],
 };
-const SHAPE_ORDER = ['corner', 'full', 'heart', 'diamond', 'full', 'cup', 'pyramid'];
 function mulberry32(a) {
   return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-function levelDef(L) {
-  const rnd = mulberry32(L * 7919 + 13);
-  const kinds = L <= 3 ? 5 : 6;
-  const shape = L <= 2 ? 'full' : SHAPE_ORDER[(L - 3) % SHAPE_ORDER.length];
+function levelDef(L, world = 'pets') {
+  const rnd = mulberry32(L * 7919 + (world === 'pets' ? 13 : 101));
+  const kinds = L <= 3 ? 5 : 6, order = THEMES[world].shapes;
+  const shape = L <= 2 ? 'full' : order[(L - 3) % order.length];
   const moves = 18 + Math.floor((L - 1) / 5) * 2;
   const target = Math.round((1200 + L * 150) / 100) * 100;
   const goals = [];
@@ -685,9 +804,9 @@ function levelDef(L) {
     for (let i = ks.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [ks[i], ks[j]] = [ks[j], ks[i]]; }
     for (let i = 0; i < n; i++) goals.push({ k: ks[i], n: n === 1 ? 8 + Math.round(L * .8) : 6 + Math.round(L * .5) });
   }
-  return { mode: 'level', L, kinds, shape, moves, target, goals };
+  return { mode: 'level', world, L, kinds, shape, moves, target, goals };
 }
-const TIMED_DEF = { mode: 'timed', kinds: 5, shape: 'full', time: 60, goals: [] };
+const timedDef = world => ({ mode: 'timed', world, kinds: 5, shape: 'full', time: 60, goals: [] });
 
 // ===== 画布与布局 =====
 const cv = $('cv'), ctx = cv.getContext('2d');
@@ -721,7 +840,7 @@ function makeTray() {
   x.restore(); x.fillStyle = 'rgba(255,255,255,.95)';
   for (let r = 0; r < R; r++) for (let q = 0; q < C; q++) if (mask[r][q]) { rr(x, q * CELL - 6, r * CELL - 6, CELL + 12, CELL + 12, CELL * .3); x.fill(); }
   for (let r = 0; r < R; r++) for (let q = 0; q < C; q++) if (mask[r][q]) {
-    x.fillStyle = (r + q) % 2 ? '#ffe7f1' : '#fff4f9'; rr(x, q * CELL + 2, r * CELL + 2, CELL - 4, CELL - 4, CELL * .24); x.fill();
+    x.fillStyle = TH.tray[(r + q) % 2 ? 0 : 1]; rr(x, q * CELL + 2, r * CELL + 2, CELL - 4, CELL - 4, CELL * .24); x.fill();
   }
   tray = c; tray.pad = pad;
 }
@@ -1139,7 +1258,8 @@ async function useToolAt(r, c) {
 // ===== 游戏流程 =====
 function startGame(def) {
   anims = []; timers = []; waiters = []; dying = []; fxs = []; floats = []; sel = null; drag = null;
-  G = { mode: def.mode, L: def.L || 0, def, kinds: def.kinds, moves: def.moves || 0, time: def.time || 0, score: 0, target: def.target || 0,
+  setTheme(def.world);
+  G = { mode: def.mode, world: def.world, L: def.L || 0, def, kinds: def.kinds, moves: def.moves || 0, time: def.time || 0, score: 0, target: def.target || 0,
     goals: def.goals.map(g => ({ k: g.k, n: g.n, left: g.n })), busy: true, started: false, over: false, paused: false,
     heat: 0, tier: 0, lastClear: 0, cascade: 0, shake: 0, idleT: 0, hint: null, extraUsed: false, feverAt: -1e9, hurry: false, lastTick: 0, snd: {},
     tools: Object.fromEntries(TOOLS.map(t => [t.id, t.n])), tool: null };
@@ -1156,19 +1276,19 @@ function startGame(def) {
     encourage('start', 3);
   })();
 }
-function startLevel(L) {
-  const def = levelDef(L);
+function startLevel(L, world = save.world) {
+  const def = levelDef(L, world);
   startGame(def); G.paused = true;
   const goals = def.goals.length ? `<div class="mgoals">收集 ${def.goals.map(g => `<span><img src="${tileIcon(g.k)}" alt="${KINDS[g.k].name}"> × ${g.n}</span>`).join('')}</div>` : '';
-  const go = () => modal(`<h2>第 ${L} 关</h2><p>${def.moves} 步内拿到 <b>${def.target}</b> 分</p>${goals}`, [{ label: '开始！', cls: 'pink', fn: () => { G.paused = false; } }]);
+  const go = () => modal(`<h2>${TH.icon} 第 ${L} 关</h2><p>${TH.name} · ${def.moves} 步内拿到 <b>${def.target}</b> 分</p>${goals}`, [{ label: '开始！', cls: 'pink', fn: () => { G.paused = false; } }]);
   if (!save.seenHelp) showHelp(go); else go();
 }
-function startTimed() {
-  startGame(TIMED_DEF); G.paused = true;
-  const go = () => modal(`<h2>60 秒挑战</h2><p>60 秒里消得越多越好！<br>连得越快萌力越高，<b>萌力爆发</b>时加 5 秒、分数翻倍。</p>`, [{ label: '开始！', cls: 'pink', fn: () => { G.paused = false; } }]);
+function startTimed(world = save.world) {
+  startGame(timedDef(world)); G.paused = true;
+  const go = () => modal(`<h2>${TH.icon} 60 秒挑战</h2><p>${TH.name}：60 秒里消得越多越好！<br>连得越快萌力越高，<b>萌力爆发</b>时加 5 秒、分数翻倍。</p>`, [{ label: '开始！', cls: 'pink', fn: () => { G.paused = false; } }]);
   if (!save.seenHelp) showHelp(go); else go();
 }
-function restart() { if (G.mode === 'level') startLevel(G.L); else startTimed(); }
+function restart() { if (G.mode === 'level') startLevel(G.L, G.world); else startTimed(G.world); }
 function quit() {
   const lv = G && G.mode === 'level';
   G = null; anims = []; timers = []; waiters = []; dying = []; fxs = []; cv.style.cursor = '';
@@ -1213,11 +1333,12 @@ async function win() {
   await sleep(400);
   if (G !== me) return;
   const stars = G.score >= G.target * 2.2 ? 3 : G.score >= G.target * 1.6 ? 2 : 1;
-  if (stars > (save.stars[G.L] || 0)) { save.stars[G.L] = stars; persist(); }
+  const sk = starKey(G.L, G.world);
+  if (stars > (save.stars[sk] || 0)) { save.stars[sk] = stars; persist(); }
   const btns = [];
-  if (G.L < LEVELS) btns.push({ label: '下一关 ▶', cls: 'pink', fn: () => startLevel(me.L + 1) });
+  if (G.L < LEVELS) btns.push({ label: '下一关 ▶', cls: 'pink', fn: () => startLevel(me.L + 1, me.world) });
   btns.push({ label: '再玩一次', fn: restart }, { label: '选关', cls: 'mint', fn: quit });
-  modal(`<h2>过关啦！</h2><div class="rstars"><span>★</span><span>★</span><span>★</span></div><p>得分 <b>${G.score}</b></p>${G.L >= LEVELS ? '<p>30 关全部完成，你太厉害啦！</p>' : ''}`, btns);
+  modal(`<h2>过关啦！</h2><div class="rstars"><span>★</span><span>★</span><span>★</span></div><p>得分 <b>${G.score}</b></p>${G.L >= LEVELS ? `<p>${TH.name} 30 关全部完成，你太厉害啦！</p>` : ''}`, btns);
   const sp = document.querySelectorAll('.rstars span');
   for (let i = 0; i < stars; i++) setTimeout(() => { sp[i].classList.add('on'); Snd.sfx('star', i); }, 350 + i * 380);
 }
@@ -1234,14 +1355,14 @@ function fail() {
 function endTimed() {
   if (G.over) return;
   G.over = true; sel = null; G.time = 0; updateHud();
-  const best = G.score > (save.best || 0);
-  if (best) { save.best = G.score; persist(); }
+  const best = G.score > (save.bests[G.world] || 0);
+  if (best) { save.bests[G.world] = G.score; persist(); }
   encourage(best ? 'best' : 'timeup', 10); Snd.sfx(best ? 'win' : 'lose'); Snd.setHurry(false);
   if (best) confetti(80);
   const me = G;
   setTimeout(() => {
     if (G !== me) return;
-    modal(`<h2>${best ? '新纪录！' : '时间到！'}</h2><p class="bigscore">${G.score}</p><p>最高纪录 ${save.best}</p>`,
+    modal(`<h2>${best ? '新纪录！' : '时间到！'}</h2><p class="bigscore">${G.score}</p><p>${TH.name}最高纪录 ${save.bests[G.world]}</p>`,
       [{ label: '再来一次', cls: 'pink', fn: restart }, { label: '回首页', cls: 'mint', fn: quit }]);
   }, 900);
 }
@@ -1250,9 +1371,20 @@ function endTimed() {
 function show(name) {
   screen = name === 'hud' ? 'game' : name;
   for (const id of ['title', 'levels', 'hud']) $(id).classList.toggle('on', id === name);
+  if (name !== 'hud') setTheme(save.world);
   if (name === 'levels') renderLevels();
-  if (name === 'title') $('bestLbl').textContent = save.best ? `最高纪录 ${save.best}` : '';
+  if (name === 'title') updateBest();
+  refreshWorlds();
   layout();
+}
+function updateBest() { const b = save.bests[save.world]; $('bestLbl').textContent = b ? `${TH.short} 60 秒最高 ${b}` : ''; }
+function refreshWorlds() { document.querySelectorAll('[data-world]').forEach(b => b.classList.toggle('on', b.dataset.world === save.world)); }
+function pickWorld(id) {
+  if (!THEMES[id] || id === save.world) return;
+  save.world = id; persist(); Snd.sfx('tap');
+  setTheme(id); refreshWorlds();
+  if (screen === 'levels') renderLevels();
+  if (screen === 'title') { updateBest(); for (const p of parade) { p.jv = 520 + p.k * 40; p.jump = .01; } } // 换世界时新萌物一起跳一下
 }
 function modal(html, buttons) {
   $('mbody').innerHTML = html; refreshToggles();
@@ -1283,19 +1415,20 @@ function refreshToggles() {
   document.querySelectorAll('[data-lang]').forEach(b => { b.textContent = LANG_LABEL[save.lang]; b.classList.toggle('off', !save.voice); });
 }
 function renderLevels() {
-  let top = 1; while (top < LEVELS && save.stars[top]) top++;
+  const w = save.world;
+  let top = 1; while (top < LEVELS && save.stars[starKey(top, w)]) top++;
   let total = 0;
   $('lvgrid').innerHTML = Array.from({ length: LEVELS }, (_, i) => {
-    const L = i + 1, s = save.stars[L] || 0, lock = L > top; total += s;
+    const L = i + 1, s = save.stars[starKey(L, w)] || 0, lock = L > top; total += s;
     return `<button class="lv${lock ? ' lock' : ''}${L === top && !s ? ' cur' : ''}" data-l="${L}"${lock ? ' disabled' : ''}><b>${lock ? '🔒' : L}</b><i><span>${'★'.repeat(s)}</span>${'★'.repeat(3 - s)}</i></button>`;
   }).join('');
   $('starTotal').textContent = `★ ${total}`;
 }
 function buildHud() {
   const lv = G.mode === 'level';
-  $('lvName').textContent = lv ? `第 ${G.L} 关` : '60 秒挑战';
+  $('lvName').textContent = `${TH.icon} ` + (lv ? `第 ${G.L} 关` : '60 秒挑战');
   $('movesLbl').textContent = lv ? '步数' : '时间';
-  $('scoreLbl').textContent = lv ? `分数 · 目标 ${G.target}` : `分数 · 最高 ${save.best || 0}`;
+  $('scoreLbl').textContent = lv ? `分数 · 目标 ${G.target}` : `分数 · 最高 ${save.bests[G.world] || 0}`;
   $('sbar').style.display = lv ? '' : 'none';
   $('goalBox').style.display = G.goals.length ? '' : 'none';
   $('goals').innerHTML = G.goals.map((g, i) => `<span class="goal" id="g${i}"><img src="${tileIcon(g.k)}" alt="${KINDS[g.k].name}"><b></b></span>`).join('');
@@ -1374,7 +1507,7 @@ function drawBg(dt) {
   heatVis += ((inGame ? G.heat / 100 : 0) - heatVis) * Math.min(1, dt * 3);
   const fever = inGame && G.tier >= 5;
   if (fever || hueRot > 0) { hueRot += dt * 60; if (hueRot >= 360) hueRot = fever ? hueRot - 360 : 0; }
-  const h1 = 335 + hueRot + heatVis * 20, h2 = 265 + hueRot - heatVis * 40;
+  const h1 = TH.sky[0] + hueRot + heatVis * 20, h2 = TH.sky[1] + hueRot - heatVis * 40;
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, `hsl(${h1},${88 + heatVis * 10}%,${88 - heatVis * 6}%)`);
   g.addColorStop(1, `hsl(${h2},80%,${90 - heatVis * 5}%)`);
@@ -1567,6 +1700,7 @@ document.addEventListener('keydown', e => {
 });
 $('tools').onclick = e => { const b = e.target.closest('.tool'); if (b) pickTool(b.dataset.tool); };
 document.addEventListener('click', e => {
+  const wb = e.target.closest('[data-world]'); if (wb) { pickWorld(wb.dataset.world); return; }
   if (e.target.closest('[data-lang]')) { // 中文 ⇄ English，切换后马上说一句听听
     save.lang = save.lang === 'zh' ? 'en' : 'zh'; save.voice = true; persist(); refreshToggles();
     if (window.speechSynthesis) speechSynthesis.cancel();

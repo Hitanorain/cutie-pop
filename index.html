@@ -107,6 +107,19 @@
   .goal img { width: 34px; height: 34px; }
   .goal b { font-size: 20px; margin-left: -1px; font-weight: normal; }
   .goal.done b { color: #22b37a; }
+  /* 道具 */
+  .tools { display: flex; gap: 7px; }
+  .tool { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; gap: 3px; height: 42px; border-radius: 15px;
+    font-size: 15px; white-space: nowrap; background: linear-gradient(180deg, #fff, #ffeef5); box-shadow: 0 4px 0 #f5b3cf, 0 6px 12px rgba(150, 40, 90, .1);
+    transition: transform .08s, box-shadow .08s; }
+  .tool:active { transform: translateY(3px); box-shadow: 0 1px 0 #f5b3cf; }
+  .tool .ti { font-size: 22px; line-height: 1; }
+  .tool em { position: absolute; top: -7px; right: -5px; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 11px; background: #ff5d9e; color: #fff;
+    font-style: normal; font-size: 13px; line-height: 21px; box-shadow: 0 2px 0 #c63a6d; }
+  .tool.used { opacity: .4; filter: grayscale(1); }
+  .tool.on { background: linear-gradient(180deg, #fff7cf, #ffd56e); box-shadow: 0 4px 0 #e3a23a; animation: wob .35s ease-in-out infinite alternate; }
+  @media (max-width: 380px) { .tool .tl { display: none; } .tool .ti { font-size: 25px; } }
+  #hud.side .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
   #hud.side #panel { left: 16px; top: 50%; transform: translateY(-50%); width: 250px; padding: 14px; gap: 12px; }
   #hud.side .prow { flex-wrap: wrap; }
   #hud.side #heat { flex-basis: 100%; }
@@ -201,6 +214,7 @@
         <div class="sbar" id="sbar"><i id="sfill"></i><em style="left:45.45%">★</em><em style="left:72.73%">★</em><em style="left:100%">★</em></div></div>
       <div class="box" id="goalBox"><small>收集</small><div id="goals"></div></div>
     </div>
+    <div class="tools" id="tools"></div>
   </div>
 </section>
 
@@ -210,7 +224,7 @@
 
 <script>
 'use strict';
-const VERSION = 'v1.1.1';
+const VERSION = 'v1.2';
 const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = n => Math.floor(Math.random() * n);
@@ -262,6 +276,14 @@ const LANG_LABEL = { zh: '中', en: 'EN' };
 const TIER_UP = [0, 12, 30, 50, 70, 88];
 const TIER_NAMES = ['慢慢来', '热身中', '不错哦', '火热！', '超嗨！', '萌力爆发！'];
 const BPMS = [100, 106, 113, 120, 128, 138];
+
+// 道具：每局（每次开始或重来）的可用次数，都不算步数
+const TOOLS = [
+  { id: 'hammer', icon: '🔨', name: '小锤子', n: 3, aim: true, tip: '点一个萌物，把它敲掉！' },
+  { id: 'shuffle', icon: '🔀', name: '洗牌', n: 2 },
+  { id: 'wand', icon: '🪄', name: '魔法棒', n: 1, aim: true, tip: '点一个萌物，变成彩虹星！' },
+  { id: 'extra', icon: '⏳', name: '加步数', n: 1 },
+];
 
 // ===== 小萌物造型 =====
 const KINDS = [
@@ -588,6 +610,7 @@ const Snd = (() => {
       case 'lose': [[72, 0], [70, .2], [67, .4], [64, .6]].forEach(([m, d]) => tone('triangle', mf(m), t + d, .35, .18, b)); break;
       case 'star': tone('sine', mf(84 + a * 4), t, .5, .2, b); tone('sine', mf(96 + a * 4), t, .3, .08, b); break;
       case 'tick': tone('sine', 1300, t, .05, .1, b); break;
+      case 'hammer': tone('square', 220, t, .12, .12, b, { glide: 70, lp: 1200 }); tone('sine', 120, t, .25, .6, b, { glide: 50 }); noise(t, .12, .3, b, 'bandpass', 1800, { q: 1.5 }); break;
       case 'shuffle': for (let i = 0; i < 10; i++) tone('triangle', mf(70 + i * 2), t + i * .03, .08, .07, b); break;
     }
   }
@@ -1051,14 +1074,75 @@ function confetti(n) {
     parts.push({ x: rand(0, W), y: rand(-40, -5), vx: rand(-60, 60), vy: rand(60, 220), g: 120, life: rand(2, 3.5), max: 3.5, size: rand(5, 10), color: `hsl(${randi(360)},90%,65%)`, shape: 3, rot: rand(0, 6), vr: rand(-8, 8) });
   }
 }
-function floatText(x, y, text, color, size = 24) { floats.push({ x, y, text, color, size, t0: clock, dur: 1000 }); }
+function floatText(x, y, text, color, size = 24, dur = 1000) { floats.push({ x, y, text, color, size, t0: clock, dur }); }
+
+// ===== 道具 =====
+function buildTools() {
+  $('tools').innerHTML = TOOLS.map(t => `<button class="tool" data-tool="${t.id}" title="${toolName(t)}"><span class="ti">${t.icon}</span><span class="tl">${toolName(t)}</span><em></em></button>`).join('');
+  updateTools();
+}
+const toolName = t => t.id === 'extra' ? (G && G.mode === 'timed' ? '+10 秒' : '+3 步') : t.name;
+function updateTools() {
+  if (!G) return;
+  document.querySelectorAll('.tool').forEach(b => {
+    const id = b.dataset.tool, n = G.tools[id];
+    b.querySelector('em').textContent = n;
+    b.classList.toggle('used', n <= 0);
+    b.classList.toggle('on', G.tool === id);
+  });
+  cv.style.cursor = G.tool ? 'pointer' : '';
+}
+function pickTool(id) {
+  if (!G || G.over || G.paused || !G.started) return;
+  const t = TOOLS.find(x => x.id === id);
+  if (G.tool === id) { G.tool = null; updateTools(); return; } // 再点一次取消
+  if (G.tools[id] <= 0 || G.busy) { Snd.sfx('nope'); return; }
+  Snd.sfx('tap'); sel = null; drag = null; G.hint = null;
+  if (t.aim) { // 锤子和魔法棒要再点一个萌物
+    G.tool = id; updateTools();
+    floatText(BX + CELL * C / 2, BY + CELL * R / 2, t.tip, '#ff5d9e', Math.min(30, CELL * .55), 1600);
+    return;
+  }
+  G.tool = null; G.tools[id]--; updateTools();
+  if (id === 'shuffle') shuffleBoard();
+  else if (id === 'extra') {
+    if (G.mode === 'timed') G.time += 10; else G.moves += 3;
+    Snd.sfx('create'); sparkle(BX + CELL * C / 2, BY + CELL * .5, 16);
+    floatText(BX + CELL * C / 2, BY + CELL * 1.2, G.mode === 'timed' ? '+10 秒！' : '+3 步！', '#ff7a2e', 34);
+    updateHud();
+  }
+}
+async function useToolAt(r, c) {
+  const t = grid[r][c], id = G.tool;
+  if (!t || G.busy) return;
+  if (id === 'wand' && t.sp === 4) { Snd.sfx('nope'); return; } // 已经是彩虹星了
+  G.tool = null; G.tools[id]--; updateTools();
+  const me = G, px = BX + (c + .5) * CELL, py = BY + (r + .5) * CELL;
+  G.busy = true; G.cascade = 0; G.idleT = clock;
+  if (id === 'hammer') {
+    fxs.push({ type: 'hammer', r, c, t0: clock, dur: 520 });
+    await sleep(230);
+    Snd.sfx('hammer'); G.shake = Math.max(G.shake, 6);
+    await blast([[r, c]]); await gravity(); await resolveLoop(null);
+  } else {
+    t.k = -1; t.sp = 4; t.used = false; t.sc = 1.8; tween(t, { sc: 1 }, 380);
+    Snd.sfx('rainbow'); sparkle(px, py, 22);
+    fxs.push({ type: 'ring', r, c, t0: clock, dur: 500 });
+    encourage('rainbow', 4);
+    await sleep(380);
+  }
+  if (G !== me) return;
+  G.busy = false; G.idleT = clock;
+  await afterMove();
+}
 
 // ===== 游戏流程 =====
 function startGame(def) {
   anims = []; timers = []; waiters = []; dying = []; fxs = []; floats = []; sel = null; drag = null;
   G = { mode: def.mode, L: def.L || 0, def, kinds: def.kinds, moves: def.moves || 0, time: def.time || 0, score: 0, target: def.target || 0,
     goals: def.goals.map(g => ({ k: g.k, n: g.n, left: g.n })), busy: true, started: false, over: false, paused: false,
-    heat: 0, tier: 0, lastClear: 0, cascade: 0, shake: 0, idleT: 0, hint: null, extraUsed: false, feverAt: -1e9, hurry: false, lastTick: 0, snd: {} };
+    heat: 0, tier: 0, lastClear: 0, cascade: 0, shake: 0, idleT: 0, hint: null, extraUsed: false, feverAt: -1e9, hurry: false, lastTick: 0, snd: {},
+    tools: Object.fromEntries(TOOLS.map(t => [t.id, t.n])), tool: null };
   Snd.setTier(0); Snd.setHurry(false);
   setMask(SHAPES[def.shape]);
   buildHud(); show('hud');
@@ -1087,7 +1171,7 @@ function startTimed() {
 function restart() { if (G.mode === 'level') startLevel(G.L); else startTimed(); }
 function quit() {
   const lv = G && G.mode === 'level';
-  G = null; anims = []; timers = []; waiters = []; dying = []; fxs = [];
+  G = null; anims = []; timers = []; waiters = []; dying = []; fxs = []; cv.style.cursor = '';
   Snd.setTier(0); Snd.setHurry(false);
   show(lv ? 'levels' : 'title');
 }
@@ -1187,6 +1271,7 @@ function showHelp(next) {
     <p>${ic(2, 1)}<span>4 个连一排：变成<b>火箭萌物</b>，消掉一整行或一整列</span></p>
     <p>${ic(5, 3)}<span>摆成 L 形或 T 形：变成<b>泡泡炸弹</b>，炸掉周围一圈</span></p>
     <p>${ic(-1, 4)}<span>5 个连一排：变成<b>彩虹星</b>，和谁交换就消掉所有同类</span></p>
+    <p><span style="font-size:30px">🔨</span><span>卡住了就用<b>道具</b>：小锤子敲掉一个、洗牌、魔法棒变彩虹星、加步数。每局次数有限，不算步数哦</span></p>
     <p><span style="font-size:32px">🔥</span><span>连得越快<b>萌力</b>越高，音乐越来越嗨；萌力满了就是<b>萌力爆发</b>，分数翻倍！</span></p>
   </div>`, [{ label: '知道啦', cls: 'pink', fn: () => { save.seenHelp = true; persist(); if (next) next(); } }]);
 }
@@ -1215,6 +1300,7 @@ function buildHud() {
   $('goalBox').style.display = G.goals.length ? '' : 'none';
   $('goals').innerHTML = G.goals.map((g, i) => `<span class="goal" id="g${i}"><img src="${tileIcon(g.k)}" alt="${KINDS[g.k].name}"><b></b></span>`).join('');
   hudTier = -1; hudHeatW = -1;
+  buildTools();
   updateHud();
 }
 function updateHud() {
@@ -1330,6 +1416,12 @@ function drawBoard() {
   if (tray) ctx.drawImage(tray, BX - tray.pad, BY - tray.pad, tray.width / DPR, tray.height / DPR);
   const amp = G.tier >= 2 ? .022 * (G.tier - 1) : 0, happy = G.tier >= 5;
   const hp = (clock % 1600) / 1600;
+  if (G.tool) { // 拿着锤子/魔法棒时，指到的格子闪金光
+    const hc = pointer.on && hitCell(pointer.x, pointer.y), a = .35 + .25 * Math.sin(clock / 120);
+    ctx.strokeStyle = `rgba(255, 190, 30, ${a + .3})`; ctx.lineWidth = 3;
+    rr(ctx, BX - 4, BY - 4, CELL * C + 8, CELL * R + 8, CELL * .3); ctx.stroke();
+    if (hc) { ctx.fillStyle = `rgba(255, 210, 63, ${a})`; rr(ctx, BX + hc[1] * CELL + 1, BY + hc[0] * CELL + 1, CELL - 2, CELL - 2, CELL * .26); ctx.fill(); }
+  }
   if (sel && grid[sel[0]][sel[1]]) {
     ctx.fillStyle = 'rgba(255, 210, 63, .55)';
     rr(ctx, BX + sel[1] * CELL + 1, BY + sel[0] * CELL + 1, CELL - 2, CELL - 2, CELL * .26); ctx.fill();
@@ -1384,6 +1476,13 @@ function drawFx() {
       ctx.lineTo(x2, y2);
       ctx.strokeStyle = `hsla(${f.hue},100%,70%,${1 - p})`; ctx.lineWidth = 4; ctx.stroke();
       ctx.strokeStyle = `rgba(255,255,255,${1 - p})`; ctx.lineWidth = 1.5; ctx.stroke();
+    } else if (f.type === 'hammer') { // 锤子从右上方抡下来敲一下，再弹开淡出
+      const sw = p < .45 ? easeInOut(p / .45) : 1, rot = -1.1 + 1.4 * sw - (p > .45 ? .25 * Math.sin((p - .45) * 12) * (1 - p) : 0);
+      ctx.save(); ctx.globalAlpha = p > .7 ? 1 - (p - .7) / .3 : 1;
+      ctx.translate(BX + (f.c + 1.05) * CELL, BY + (f.r + 1.0) * CELL); ctx.rotate(rot);
+      ctx.font = `${CELL * 1.1}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.scale(-1, 1); ctx.fillStyle = '#000'; ctx.fillText('🔨', CELL * .35, -CELL * .55); // 填充色的透明度会作用到 emoji 上，先设成不透明
+      ctx.restore();
     } else if (f.type === 'flash') {
       ctx.fillStyle = `rgba(255,255,255,${(1 - p) * .7})`; ctx.fillRect(-50, -50, W + 100, H + 100);
     }
@@ -1435,6 +1534,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if (screen !== 'game' || !G || G.over || G.paused) return;
   const cell = hitCell(e.clientX, e.clientY);
+  if (G.tool) { if (cell) useToolAt(cell[0], cell[1]); return; }
   if (!cell) { sel = null; return; }
   G.idleT = clock; G.hint = null;
   if (sel && Math.abs(sel[0] - cell[0]) + Math.abs(sel[1] - cell[1]) === 1) { const a = sel; sel = null; trySwap(a[0], a[1], cell[0], cell[1]); return; }
@@ -1460,7 +1560,12 @@ cv.addEventListener('pointercancel', endDrag);
 cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') pointer.on = false; });
 
 document.addEventListener('pointerdown', () => Snd.unlock(), true);
-document.addEventListener('keydown', e => { Snd.unlock(); if (e.key === 'Escape') pause(); });
+document.addEventListener('keydown', e => {
+  Snd.unlock();
+  if (e.key !== 'Escape') return;
+  if (G && G.tool) { G.tool = null; updateTools(); } else pause();
+});
+$('tools').onclick = e => { const b = e.target.closest('.tool'); if (b) pickTool(b.dataset.tool); };
 document.addEventListener('click', e => {
   if (e.target.closest('[data-lang]')) { // 中文 ⇄ English，切换后马上说一句听听
     save.lang = save.lang === 'zh' ? 'en' : 'zh'; save.voice = true; persist(); refreshToggles();

@@ -32,6 +32,8 @@
   .btn.pink:active { box-shadow: inset 0 3px 0 rgba(255,255,255,.5), 0 2px 0 #c63a6d; }
   .btn.mint { background: linear-gradient(180deg, #8ff0c8 0%, #3fd0a0 55%, #22b989 100%); box-shadow: inset 0 3px 0 rgba(255,255,255,.5), 0 7px 0 #158a64, 0 12px 24px rgba(10,80,60,.25); }
   .btn.mint:active { box-shadow: inset 0 3px 0 rgba(255,255,255,.5), 0 2px 0 #158a64; }
+  .btn.grape { background: linear-gradient(180deg, #d4b0ff 0%, #a97cf5 55%, #8f5ee8 100%); box-shadow: inset 0 3px 0 rgba(255,255,255,.5), 0 7px 0 #6a3dbf, 0 12px 24px rgba(60,20,120,.25); }
+  .btn.grape:active { box-shadow: inset 0 3px 0 rgba(255,255,255,.5), 0 2px 0 #6a3dbf; }
   .btn.small { font-size: 21px; padding: 10px 26px; min-width: 150px; }
   .rbtn { width: 50px; height: 50px; border-radius: 50%; font-size: 23px; display: inline-flex; align-items: center; justify-content: center; flex: none;
     background: rgba(255, 255, 255, .85); box-shadow: 0 5px 0 rgba(220, 120, 170, .4), 0 8px 18px rgba(90, 30, 70, .15); transition: transform .08s, box-shadow .08s; }
@@ -191,6 +193,7 @@
       <div class="wtabs"><button data-world="pets">🐰 萌宠乐园</button><button data-world="fruit">🍓 水果乐园</button></div>
       <button class="btn pink" id="bLevels">闯关模式</button>
       <button class="btn" id="bTimed">60 秒挑战</button>
+      <button class="btn grape" id="bEndless">无限模式</button>
       <div class="best" id="bestLbl"></div>
       <button class="btn mint small" id="bHelp">怎么玩</button>
     </div>
@@ -233,14 +236,14 @@
 
 <script>
 'use strict';
-const VERSION = 'v1.3';
+const VERSION = 'v1.4';
 const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = n => Math.floor(Math.random() * n);
 const R = 8, C = 8, LEVELS = 30;
 
 const SAVE_KEY = 'cutie-pop-v1';
-const save = { stars: {}, bests: {}, world: 'pets', music: true, sfx: true, voice: true, lang: 'zh', seenHelp: false };
+const save = { stars: {}, bests: {}, endless: {}, world: 'pets', music: true, sfx: true, voice: true, lang: 'zh', seenHelp: false };
 try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
 if (save.best) { save.bests.pets = Math.max(save.bests.pets || 0, save.best); delete save.best; } // v1.2 以前只有一个 60 秒纪录，算在萌宠乐园
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
@@ -807,6 +810,7 @@ function levelDef(L, world = 'pets') {
   return { mode: 'level', world, L, kinds, shape, moves, target, goals };
 }
 const timedDef = world => ({ mode: 'timed', world, kinds: 5, shape: 'full', time: 60, goals: [] });
+const endlessDef = world => ({ mode: 'endless', world, kinds: 5, shape: 'full', goals: [] });
 
 // ===== 画布与布局 =====
 const cv = $('cv'), ctx = cv.getContext('2d');
@@ -1114,7 +1118,8 @@ async function afterMove() {
   if (G.mode === 'level') {
     if (goalsDone() && G.score >= G.target) return win();
     if (G.moves <= 0) return fail();
-  } else if (G.time <= 0) return endTimed();
+  } else if (G.mode === 'timed') { if (G.time <= 0) return endTimed(); }
+  else saveEndless();
   if (!findMove()) await shuffleBoard();
 }
 async function shuffleBoard() {
@@ -1197,9 +1202,10 @@ function floatText(x, y, text, color, size = 24, dur = 1000) { floats.push({ x, 
 
 // ===== 道具 =====
 function buildTools() {
-  $('tools').innerHTML = TOOLS.map(t => `<button class="tool" data-tool="${t.id}" title="${toolName(t)}"><span class="ti">${t.icon}</span><span class="tl">${toolName(t)}</span><em></em></button>`).join('');
+  $('tools').innerHTML = modeTools().map(t => `<button class="tool" data-tool="${t.id}" title="${toolName(t)}"><span class="ti">${t.icon}</span><span class="tl">${toolName(t)}</span><em></em></button>`).join('');
   updateTools();
 }
+const modeTools = () => TOOLS.filter(t => !(t.id === 'extra' && G && G.mode === 'endless')); // 无限模式不需要加步数
 const toolName = t => t.id === 'extra' ? (G && G.mode === 'timed' ? '+10 秒' : '+3 步') : t.name;
 function updateTools() {
   if (!G) return;
@@ -1288,7 +1294,12 @@ function startTimed(world = save.world) {
   const go = () => modal(`<h2>${TH.icon} 60 秒挑战</h2><p>${TH.name}：60 秒里消得越多越好！<br>连得越快萌力越高，<b>萌力爆发</b>时加 5 秒、分数翻倍。</p>`, [{ label: '开始！', cls: 'pink', fn: () => { G.paused = false; } }]);
   if (!save.seenHelp) showHelp(go); else go();
 }
-function restart() { if (G.mode === 'level') startLevel(G.L, G.world); else startTimed(G.world); }
+function startEndless(world = save.world) {
+  startGame(endlessDef(world)); G.paused = true;
+  const go = () => modal(`<h2>${TH.icon} 无限模式</h2><p>${TH.name}：不限步数、没有目标，想消多久就消多久！<br>没得消了会自动洗牌，分数越高越好。</p>`, [{ label: '开始！', cls: 'pink', fn: () => { G.paused = false; } }]);
+  if (!save.seenHelp) showHelp(go); else go();
+}
+function restart() { if (G.mode === 'level') startLevel(G.L, G.world); else if (G.mode === 'endless') startEndless(G.world); else startTimed(G.world); }
 function quit() {
   const lv = G && G.mode === 'level';
   G = null; anims = []; timers = []; waiters = []; dying = []; fxs = []; cv.style.cursor = '';
@@ -1367,6 +1378,18 @@ function endTimed() {
   }, 900);
 }
 
+// 无限模式没有终点：每步之后记最高分，第一次超过旧纪录时庆祝一下
+function saveEndless() {
+  const old = save.endless[G.world] || 0;
+  if (G.score <= old) return;
+  save.endless[G.world] = G.score; persist();
+  if (old > 0 && !G.recorded) {
+    G.recorded = true; encourage('best', 5); confetti(40);
+    floatText(BX + CELL * C / 2, BY + CELL * 1.2, '新纪录！', '#ff3d8b', 34, 1400);
+  }
+  updateHud();
+}
+
 // ===== 界面 =====
 function show(name) {
   screen = name === 'hud' ? 'game' : name;
@@ -1377,7 +1400,10 @@ function show(name) {
   refreshWorlds();
   layout();
 }
-function updateBest() { const b = save.bests[save.world]; $('bestLbl').textContent = b ? `${TH.short} 60 秒最高 ${b}` : ''; }
+function updateBest() {
+  const b = save.bests[save.world], e = save.endless[save.world];
+  $('bestLbl').textContent = [b ? `${TH.short} 60 秒最高 ${b}` : '', e ? `无限最高 ${e}` : ''].filter(Boolean).join(' · ');
+}
 function refreshWorlds() { document.querySelectorAll('[data-world]').forEach(b => b.classList.toggle('on', b.dataset.world === save.world)); }
 function pickWorld(id) {
   if (!THEMES[id] || id === save.world) return;
@@ -1426,9 +1452,9 @@ function renderLevels() {
 }
 function buildHud() {
   const lv = G.mode === 'level';
-  $('lvName').textContent = `${TH.icon} ` + (lv ? `第 ${G.L} 关` : '60 秒挑战');
-  $('movesLbl').textContent = lv ? '步数' : '时间';
-  $('scoreLbl').textContent = lv ? `分数 · 目标 ${G.target}` : `分数 · 最高 ${save.bests[G.world] || 0}`;
+  $('lvName').textContent = `${TH.icon} ` + (lv ? `第 ${G.L} 关` : G.mode === 'endless' ? '无限模式' : '60 秒挑战');
+  $('movesLbl').textContent = G.mode === 'timed' ? '时间' : '步数';
+  if (lv) $('scoreLbl').textContent = `分数 · 目标 ${G.target}`;
   $('sbar').style.display = lv ? '' : 'none';
   $('goalBox').style.display = G.goals.length ? '' : 'none';
   $('goals').innerHTML = G.goals.map((g, i) => `<span class="goal" id="g${i}"><img src="${tileIcon(g.k)}" alt="${KINDS[g.k].name}"><b></b></span>`).join('');
@@ -1439,9 +1465,10 @@ function buildHud() {
 function updateHud() {
   if (!G) return;
   const m = $('moves');
-  m.textContent = G.mode === 'timed' ? Math.ceil(Math.max(0, G.time)) : G.moves;
-  m.classList.toggle('warn', G.mode === 'timed' ? G.time <= 10 : G.moves <= 3);
+  m.textContent = G.mode === 'timed' ? Math.ceil(Math.max(0, G.time)) : G.mode === 'endless' ? '∞' : G.moves;
+  m.classList.toggle('warn', G.mode === 'timed' ? G.time <= 10 : G.mode === 'level' && G.moves <= 3);
   $('score').textContent = G.score;
+  if (G.mode !== 'level') $('scoreLbl').textContent = `分数 · 最高 ${(G.mode === 'endless' ? save.endless : save.bests)[G.world] || 0}`;
   if (G.mode === 'level') {
     $('sfill').style.width = Math.min(100, G.score / (G.target * 2.2) * 100) + '%';
     $('sbar').querySelectorAll('em').forEach((e, i) => e.classList.toggle('on', G.score >= G.target * [1, 1.6, 2.2][i]));
@@ -1494,7 +1521,8 @@ function update(dt) {
     else if (G.time > 12 && G.hurry) { G.hurry = false; Snd.setHurry(false); }
     if (G.time <= 0 && !G.busy) endTimed();
   }
-  if (G.started && !G.busy && !G.over && !G.hint && clock - G.idleT > 5000) G.hint = findMove();
+  // 5 秒没成功消除就提示一组能换的（暂停时游戏时钟不走，所以不会计时）
+  if (G.started && !G.busy && !G.over && !G.paused && !G.tool && !G.hint && clock - G.idleT > 5000) { G.hint = findMove(); G.hintAt = clock; }
   hudHeat();
 }
 
@@ -1554,6 +1582,11 @@ function drawBoard() {
     ctx.strokeStyle = `rgba(255, 190, 30, ${a + .3})`; ctx.lineWidth = 3;
     rr(ctx, BX - 4, BY - 4, CELL * C + 8, CELL * R + 8, CELL * .3); ctx.stroke();
     if (hc) { ctx.fillStyle = `rgba(255, 210, 63, ${a})`; rr(ctx, BX + hc[1] * CELL + 1, BY + hc[0] * CELL + 1, CELL - 2, CELL - 2, CELL * .26); ctx.fill(); }
+  }
+  if (G.hint && !sel) { // 提示的两格一闪一闪发光
+    const a = Math.min(1, (clock - G.hintAt) / 400) * (.3 + .25 * Math.sin(clock / 160));
+    ctx.fillStyle = `rgba(255, 236, 140, ${a})`; ctx.strokeStyle = `rgba(255, 180, 30, ${a + .25})`; ctx.lineWidth = 3;
+    for (const [hr, hc] of G.hint) { rr(ctx, BX + hc * CELL + 2, BY + hr * CELL + 2, CELL - 4, CELL - 4, CELL * .26); ctx.fill(); ctx.stroke(); }
   }
   if (sel && grid[sel[0]][sel[1]]) {
     ctx.fillStyle = 'rgba(255, 210, 63, .55)';
@@ -1719,6 +1752,7 @@ document.addEventListener('visibilitychange', () => {
 });
 $('bLevels').onclick = () => { Snd.sfx('tap'); show('levels'); };
 $('bTimed').onclick = () => { Snd.sfx('tap'); startTimed(); };
+$('bEndless').onclick = () => { Snd.sfx('tap'); startEndless(); };
 $('bHelp').onclick = () => { Snd.sfx('tap'); showHelp(null); };
 $('lvBack').onclick = () => { Snd.sfx('tap'); show('title'); };
 $('bPause').onclick = () => { Snd.sfx('tap'); pause(); };
